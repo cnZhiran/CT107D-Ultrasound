@@ -1,0 +1,220 @@
+C51 COMPILER V9.59.0.0   MAIN                                                              09/04/2020 08:02:42 PAGE 1   
+
+
+C51 COMPILER V9.59.0.0, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN .\Objects\main.obj
+COMPILER INVOKED BY: D:\Keil_v5\C51\BIN\C51.EXE main.c OPTIMIZE(8,SPEED) BROWSE INCDIR(.\inc) DEBUG OBJECTEXTEND PRINT(.
+                    -\Listings\main.lst) TABS(2) OBJECT(.\Objects\main.obj)
+
+line level    source
+
+   1          #include <STC15F2K60S2.H>
+   2          #include <intrins.h>
+   3          
+   4          #ifndef u8
+   5          #define u8 unsigned char
+   6          #endif
+   7          
+   8          #ifndef u16
+   9          #define u16 unsigned int
+  10          #endif
+  11          
+  12          #ifndef u32
+  13          #define u32 unsigned long
+  14          #endif
+  15          
+  16          //定义超声波模块引脚
+  17          sbit Trig = P1^0; //发送端
+  18          sbit Echo = P1^1; //接收端
+  19          
+  20          u8 code font[10]={0xc0,0xf9,0xa4,0xb0,0x99,0x92,0x82,0xf8,0x80,0x90};
+  21          u8 code y4=0x80,y5=0xa0,y6=0xc0,y7=0xe0;
+  22          u8 dis[8]={0xc7,0xff,0xff,0xff,0xff,0xff,0xff,0xff};
+  23          
+  24          bit trig_sign=0,echo_sign=1,time_out_sign=0;
+  25          u16 trig_cnt=1000;
+  26          u16 len,len_t;
+  27          
+  28          void PCA_init();
+  29          void trig_len();
+  30          void echo_len();
+  31          
+  32          void dis_smg();
+  33          /********************延时函数********************/
+  34          void delay100us()   //@12.000MHz
+  35          {
+  36   1        unsigned char i, j;
+  37   1      
+  38   1        i = 2;
+  39   1        j = 39;
+  40   1        do
+  41   1        {
+  42   2          while (--j);
+  43   2        } while (--i);
+  44   1      }
+  45          void delay12us()    //@12.000MHz
+  46          {
+  47   1        unsigned char i;
+  48   1      
+  49   1        _nop_();
+  50   1        _nop_();
+  51   1        i = 33;
+  52   1        while (--i);
+  53   1      }
+  54          /********************初始化函数******************/
+C51 COMPILER V9.59.0.0   MAIN                                                              09/04/2020 08:02:42 PAGE 2   
+
+  55          void PCA_init(){
+  56   1        P_SW1 &= 0xcf;  //(P1.2/ECI, P1.1/CCP0, P1.0/CCP1, P3.7/CCP2)
+  57   1        CCON = 0;       //初始化PCA控制寄存器
+  58   1                        //PCA定时器停止
+  59   1                        //清除溢出中断标志
+  60   1                        //清除捕获中断标志
+  61   1        CL = 0;         //清零阵列寄存器
+  62   1        CH = 0;
+  63   1        CMOD = 0x01;    //设置PCA时钟源为SYSclk/12,允许溢出中断
+  64   1        CCAPM0 = 0x10;  //PCA模块0为下降沿触发,关闭中断。
+  65   1        EA = 1;
+  66   1      }
+  67          
+  68          void Timer0Init(void)   //1毫秒@12.000MHz
+  69          {
+  70   1        AUXR &= 0x7F;   //定时器时钟12T模式
+  71   1        TMOD &= 0xF0;   //设置定时器模式
+  72   1        TL0 = 0x18;     //设置定时初值
+  73   1        TH0 = 0xFC;     //设置定时初值
+  74   1        TF0 = 0;        //清除中断标志
+  75   1        TR0 = 1;        //定时器0开始计时
+  76   1        
+  77   1        ET0 = 1;        //使能定时器0中断
+  78   1        EA = 1;
+  79   1      }
+  80          /****************中断处理函数********************/
+  81          void PCA_isr() interrupt 7    //PCA中断处理函数
+  82          { 
+  83   1        //捕获成功
+  84   1        if (CCF0){
+  85   2          len_t = (CCAP0H<<8)|CCAP0L;  //保存本次的捕获值
+  86   2          echo_sign = 1;
+  87   2          CR = 0;                       //PCA定时器停止工作
+  88   2          CCAPM0 &= 0xfe;               //关闭中断
+  89   2        }
+  90   1        //超时
+  91   1        else if (CF){
+  92   2          time_out_sign = 1;
+  93   2          CR = 0;                       //PCA定时器停止工作
+  94   2          CCAPM0 &= 0xfe;               //关闭中断
+  95   2        }
+  96   1        CCF0 = 0;                       //清理中断标志
+  97   1        CF = 0;
+  98   1      }
+  99          
+ 100          void T0_isr() interrupt 1   //T0中断处理函数，每1000ms发射一次超声波
+ 101          {
+ 102   1        if(--trig_cnt == 0) {
+ 103   2          trig_cnt = 1000;
+ 104   2          trig_sign = 1;
+ 105   2        }
+ 106   1      }
+ 107          /*********************主函数*********************/
+ 108          void main() {
+ 109   1        Timer0Init();
+ 110   1        PCA_init();
+ 111   1        while(1) {
+ 112   2          dis_smg();
+ 113   2          if(trig_sign) trig_len();
+ 114   2          if(echo_sign | time_out_sign) echo_len();
+ 115   2        }
+ 116   1      }
+C51 COMPILER V9.59.0.0   MAIN                                                              09/04/2020 08:02:42 PAGE 3   
+
+ 117          
+ 118          /*************************************************
+ 119          *函数：trig_len()
+ 120          *功能：发射超声波，开启PCA计时及中断
+ 121          *************************************************/
+ 122          void trig_len() {
+ 123   1        u8 i=8;
+ 124   1        
+ 125   1        //产生八个周期7kHz方波信号
+ 126   1        while(i--){
+ 127   2          Trig = 1;
+ 128   2          delay12us();
+ 129   2          Trig = 0;
+ 130   2          delay12us();
+ 131   2        }
+ 132   1        CL = 0;                 //计时器清零
+ 133   1        CH = 0;
+ 134   1        CCF0 = 0;               //清标志(开启前必须清标志)
+ 135   1        CF = 0;
+ 136   1        CCAPM0 |= 0x01;         //开启中断
+ 137   1        CR = 1;                 //PCA定时器开始工作
+ 138   1        
+ 139   1        trig_sign = 0;
+ 140   1      }
+ 141          
+ 142          /*************************************************
+ 143          *函数：echo_len()
+ 144          *功能：计算距离，产生数码管字模
+ 145          *************************************************/
+ 146          void echo_len() {
+ 147   1        u8 i;
+ 148   1        
+ 149   1        if(echo_sign){
+ 150   2          //计算距离
+ 151   2          len=len_t *0.017 *10; //保留1位小数
+ 152   2          //生成字模
+ 153   2          dis[3]=font[len/10000];
+ 154   2          dis[4]=font[len/1000%10];
+ 155   2          dis[5]=font[len/100%10];
+ 156   2          dis[6]=font[len/10%10]&0x7f;
+ 157   2          dis[7]=font[len%10];
+ 158   2          //消零
+ 159   2          for(i=3;dis[i]==font[0];i++) dis[i]=0xff;
+ 160   2        }else if(time_out_sign){
+ 161   2          //超时设置
+ 162   2          len=9999;
+ 163   2          dis[3]=font[9];
+ 164   2          dis[4]=font[9];
+ 165   2          dis[5]=font[9];
+ 166   2          dis[6]=font[9]&0x7f;
+ 167   2          dis[7]=font[9];
+ 168   2        }
+ 169   1        time_out_sign = 0;
+ 170   1        echo_sign = 0;
+ 171   1      }
+ 172          
+ 173          /*************************************************
+ 174          *函数：dis_smg()
+ 175          *功能：数码管显示函数
+ 176          *************************************************/
+ 177          void dis_smg() {
+ 178   1        u8 i;
+C51 COMPILER V9.59.0.0   MAIN                                                              09/04/2020 08:02:42 PAGE 4   
+
+ 179   1      
+ 180   1        for(i=0;i<8;i++){
+ 181   2          P2&=0x1f;
+ 182   2          P0=1<<i;
+ 183   2          P2|=y6;
+ 184   2          P2&=0x1f;
+ 185   2          P0=dis[i];
+ 186   2          P2|=y7;
+ 187   2          delay100us();
+ 188   2          P0=0xff;
+ 189   2        }
+ 190   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    487    ----
+   CONSTANT SIZE    =     14    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     14    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      3    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
