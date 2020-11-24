@@ -21,7 +21,7 @@ u8 code font[10]={0xc0,0xf9,0xa4,0xb0,0x99,0x92,0x82,0xf8,0x80,0x90};
 u8 code y4=0x80,y5=0xa0,y6=0xc0,y7=0xe0;
 u8 dis[8]={0xc7,0xff,0xff,0xff,0xff,0xff,0xff,0xff};
 
-bit trig_sign=0,echo_sign=1,time_out_sign=0;
+bit trig_sign=1,echo_sign=0,time_out_sign=0;
 u16 trig_cnt=1000;
 u16 len,len_t;
 
@@ -55,45 +55,43 @@ void delay12us()		//@12.000MHz
 void PCA_init(){
 	P_SW1 &= 0xcf;	//(P1.2/ECI, P1.1/CCP0, P1.0/CCP1, P3.7/CCP2)
 	CCON = 0;       //初始化PCA控制寄存器
-                  //PCA定时器停止
-                  //清除溢出中断标志
-                  //清除捕获中断标志
-  CL = 0;         //清零阵列寄存器
-  CH = 0;
-  CMOD = 0x01;    //设置PCA时钟源为SYSclk/12,允许溢出中断
-  CCAPM0 = 0x10;  //PCA模块0为下降沿触发,关闭中断。
-  EA = 1;
+					//PCA定时器停止
+					//清除溢出中断标志
+					//清除捕获中断标志
+	CL = 0;         //清零阵列寄存器
+	CH = 0;
+	CMOD = 0x01;    //设置PCA时钟源为SYSclk/12,允许溢出中断
+	CCAPM0 = 0x10;  //PCA模块0为下降沿触发,关闭中断。
 }
 
 void Timer0Init(void)		//1毫秒@12.000MHz
 {
-	AUXR &= 0x7F;		//定时器时钟12T模式
-	TMOD &= 0xF0;		//设置定时器模式
-	TL0 = 0x18;			//设置定时初值
-	TH0 = 0xFC;			//设置定时初值
+	AUXR &= 0x7F;			//定时器时钟12T模式
+	TMOD &= 0xF0;			//设置定时器模式
+	TL0 = 0x18;				//设置定时初值
+	TH0 = 0xFC;				//设置定时初值
 	TF0 = 0;				//清除中断标志
 	TR0 = 1;				//定时器0开始计时
 	
 	ET0 = 1;				//使能定时器0中断
-	EA = 1;
 }
 /****************中断处理函数********************/
 void PCA_isr() interrupt 7		//PCA中断处理函数
 {	
 	//捕获成功
 	if (CCF0){
-		len_t = (CCAP0H<<8)|CCAP0L;  //保存本次的捕获值
+		len_t = (CCAP0H<<8)|CCAP0L;		//保存本次的捕获值
 		echo_sign = 1;
-		CR = 0;												//PCA定时器停止工作
-		CCAPM0 &= 0xfe;								//关闭中断
+		CR = 0;							//PCA定时器停止工作
+		CCAPM0 &= 0xfe;					//关闭中断
 	}
 	//超时
 	else if (CF){
 		time_out_sign = 1;
-		CR = 0;												//PCA定时器停止工作
-		CCAPM0 &= 0xfe;								//关闭中断
+		CR = 0;							//PCA定时器停止工作
+		CCAPM0 &= 0xfe;					//关闭中断
 	}
-	CCF0 = 0;												//清理中断标志
+	CCF0 = 0;							//清理中断标志
 	CF = 0;
 }
 
@@ -106,8 +104,10 @@ void T0_isr() interrupt 1		//T0中断处理函数，每1000ms发射一次超声波
 }
 /*********************主函数*********************/
 void main() {
+	Trig = 0;
 	Timer0Init();
-	PCA_init();
+	PCA_init();	 
+	EA = 1;
 	while(1) {
 		dis_smg();
 		if(trig_sign) trig_len();
@@ -129,12 +129,12 @@ void trig_len() {
 		Trig = 0;
 		delay12us();
 	}
-	CL = 0;									//计时器清零
+	CL = 0;							//计时器清零
 	CH = 0;
-	CCF0 = 0;								//清标志(开启前必须清标志)
+	CCF0 = 0;						//清标志(开启前必须清标志)
 	CF = 0;
 	CCAPM0 |= 0x01;					//开启中断
-	CR = 1;                 //PCA定时器开始工作
+	CR = 1;							//PCA定时器开始工作
 	
 	trig_sign = 0;
 }
